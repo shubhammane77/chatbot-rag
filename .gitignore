@@ -1,0 +1,8 @@
+__pycache__/load_docs.cpython-311.pyc
+__pycache__/multi_query.cpython-311.pyc
+__pycache__/rag_pipeline.cpython-311.pyc
+__pycache__/vector_store.cpython-311.pyc
+faiss_index/index.faiss
+faiss_index/index.pkl
+.env
+.python-version
