@@ -8,5 +8,5 @@ def load_and_split_docs(file_path="/Users/Shubh/Downloads/2507.21004v1.pdf"):
     splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=50)
     print(f"Loaded {len(documents)} documents from {file_path}")
     split_docs = splitter.split_documents(documents)
-    print(f"Split documents into {split_docs[10].page_content} chunks")
+    print(f"Split documents into {split_docs[20]} chunks")
     return split_docs

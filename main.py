@@ -26,12 +26,22 @@ def main():
         query = input("\nAsk a question (or type 'exit'): ")
         if query.lower() == "exit":
             break
-        query_rewriting = input("\n Type m for multi-query generation: ")
+        query_rewriting = input("\n Type m for multi-query generation, c for chain of thought prompting: ")
         if query_rewriting.lower() == "m":
             multi_queries = generate_multi_queries(query)
             for mq in multi_queries:
                 result = rag_chain.run(mq)
                 print(f"\nAnswer for '{mq}':\n", result)
+        if query_rewriting.lower() == "c":
+            from chainOfThought import decompose_query_with_cot
+            steps = decompose_query_with_cot(query)
+            print("\nDecomposed Steps:")
+            for i, step in enumerate(steps, 1):
+                print(f"{i}. {step}")
+            print("\nNow running RAG for each step...")
+            for step in steps:
+                result = rag_chain.run(step)
+                print(f"\nAnswer for '{step}':\n", result)        
         else:
             result = rag_chain.run(query)
             print("\nAnswer:\n", result)

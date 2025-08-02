@@ -28,11 +28,6 @@ def temporal_framing(question: str) -> List[str]:
         f"What are the current trends in {question.lower()}?",
         f"What future advancements are expected in {question.lower()}?",
     ]
-
-def comparative_thinking(question: str) -> List[str]:
-    return [
-        f"How does {question.lower()} compare to supervised learning?"    ]
-
 def failure_or_limitation(question: str) -> List[str]:
     return [
         f"What are the limitations of {question.lower()}?",
@@ -45,7 +40,6 @@ def generate_multi_queries(question: str) -> List[str]:
     queries.extend(semantic_expansion(question))
     queries.extend(perspective_shift(question))
     queries.extend(temporal_framing(question))
-    queries.extend(comparative_thinking(question))
     queries.extend(failure_or_limitation(question))
     
     # Remove duplicates and clean up
