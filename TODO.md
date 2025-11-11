@@ -1,8 +1,8 @@
 # Next Steps
 
-- [ ] **Data Preparation:**
-    - [ ] Configure `DOCUMENT_PATH` in `.env` to point to a directory containing multiple PDF files.
-    - [ ] Implement a mechanism in `create_vector_store_script.py` to iterate through and process multiple PDF files from the `DOCUMENT_PATH` directory.
+- [-] **Data Preparation:**
+    - [-] Configure `DOCUMENT_PATH` in `.env` to point to a directory containing multiple PDF files.
+    - [-] Implement a mechanism in `create_vector_store_script.py` to iterate through and process multiple PDF files from the `DOCUMENT_PATH` directory.
 - [ ] **Vector Store Creation:**
     - [ ] Run `uv run create-vector-store` to create embeddings for all PDF files using various chunking strategies (Recursive Character, Fixed Size, Sliding Window).
 - [ ] **Question Answering (QA) Generation:**

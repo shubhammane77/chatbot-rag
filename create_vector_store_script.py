@@ -17,9 +17,25 @@ def main():
         print("Error: DOCUMENT_PATH environment variable not set. Please set it in your .env file.")
         exit(1)
 
-    loader = PyPDFLoader(document_path)
-    documents = loader.load()
-    print(f"Loaded {len(documents)} documents from {document_path}")
+    documents = []
+    if os.path.isdir(document_path):
+        print(f"Loading documents from directory: {document_path}")
+        for root, _, files in os.walk(document_path):
+            for filename in files:
+                if filename.endswith(".pdf"):
+                    filepath = os.path.join(root, filename)
+                    loader = PyPDFLoader(filepath)
+                    documents.extend(loader.load())
+                    print(f"Loaded documents from {filepath}")
+    elif os.path.isfile(document_path) and document_path.endswith(".pdf"):
+        print(f"Loading document from file: {document_path}")
+        loader = PyPDFLoader(document_path)
+        documents.extend(loader.load())
+    else:
+        print(f"Error: DOCUMENT_PATH '{document_path}' is not a valid PDF file or directory.")
+        exit(1)
+
+    print(f"Total loaded {len(documents)} documents.")
 
     chunking_strategies = {
         "recursive": RecursiveCharacterChunkingStrategy(),

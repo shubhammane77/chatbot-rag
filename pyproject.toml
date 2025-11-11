@@ -11,10 +11,7 @@ dependencies = [
     "langchain-community>=0.3.27",
     "langchain-google-genai>=2.1.8",
     "pypdf>=5.9.0",
+    "sentence-transformers>=2.7.0",
 ]
 [tool.setuptools]
 py-modules = []
-
-[tool.uv.scripts]
-create-vector-store = "python create_vector_store_script.py"
-chatbot = "python main.py"

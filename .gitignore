@@ -11,3 +11,4 @@ vectore_store/__pycache__/vector_store.cpython-311.pyc
 notebooks/.ipynb_checkpoints/Untitled-checkpoint.ipynb
 *.pyc
 chatbot_rag.egg-info/
+faiss_index_*
