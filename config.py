@@ -12,6 +12,7 @@ def load_environment_variables():
     os.environ["GOOGLE_API_KEY"] = os.getenv("GEMINI_API_KEY", "")
     os.environ["DOCUMENT_PATH"] = os.getenv("DOCUMENT_PATH", "")
     os.environ["HF_EMBEDDING_MODEL"] = os.getenv("HF_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+    os.environ["DEBUG_MODE"] = os.getenv("DEBUG_MODE", "false")
 
     # Print environment variables for verification (optional)
     print(f"LANGSMITH_API_KEY: {os.environ.get('LANGSMITH_API_KEY')}")
@@ -21,3 +22,4 @@ def load_environment_variables():
     print(f"GOOGLE_API_KEY: {os.environ.get('GOOGLE_API_KEY')}")
     print(f"DOCUMENT_PATH: {os.environ.get('DOCUMENT_PATH')}")
     print(f"HF_EMBEDDING_MODEL: {os.environ.get('HF_EMBEDDING_MODEL')}")
+    print(f"DEBUG_MODE: {os.environ.get('DEBUG_MODE')}")

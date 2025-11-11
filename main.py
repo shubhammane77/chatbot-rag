@@ -1,6 +1,6 @@
 import os
 from vectore_store.vector_store import load_vector_store
-from chatbot_interface import chat_interface
+from chatbot_interface import chat_interface, evaluate_strategies
 from config import load_environment_variables
 
 def main():
@@ -18,13 +18,16 @@ def main():
             exit()
 
     while True:
-        action = input("\nType 'chat' to start chatbot, or 'exit' to quit: ").lower()
+        action = input("\nType 'chat' to start chatbot, 'evaluate' to run evaluations, or 'exit' to quit: ").lower()
         if action == "exit":
             break
         elif action == "chat":
             chat_interface(vector_stores)
+        elif action == "evaluate":
+            print("\nRunning evaluations...")
+            evaluate_strategies(vector_stores)
         else:
-            print("Invalid action. Please type 'chat' or 'exit'.")
+            print("Invalid action. Please type 'chat', 'evaluate', or 'exit'.")
 
 if __name__ == "__main__":
     main()

@@ -4,7 +4,7 @@
     - [-] Configure `DOCUMENT_PATH` in `.env` to point to a directory containing multiple PDF files.
     - [-] Implement a mechanism in `create_vector_store_script.py` to iterate through and process multiple PDF files from the `DOCUMENT_PATH` directory.
 - [ ] **Vector Store Creation:**
-    - [ ] Run `uv run create-vector-store` to create embeddings for all PDF files using various chunking strategies (Recursive Character, Fixed Size, Sliding Window).
+    - [-] Run `uv run create-vector-store` to create embeddings for all PDF files using various chunking strategies (Recursive Character, Fixed Size, Sliding Window).
 - [ ] **Question Answering (QA) Generation:**
     - [ ] Develop a script or modify an existing one to generate a set of benchmark questions and answers based on the content of the embedded PDF files.
     - [ ] Consider using an LLM to assist in generating relevant and diverse questions for each PDF.
