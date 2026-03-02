@@ -12,3 +12,7 @@ notebooks/.ipynb_checkpoints/Untitled-checkpoint.ipynb
 *.pyc
 chatbot_rag.egg-info/
 faiss_index_*
+logs/
+.DS_Store
+debug.log
+docker-compose.yml

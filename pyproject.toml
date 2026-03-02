@@ -6,12 +6,31 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "dotenv>=0.9.9",
+    "elasticsearch>=9.2.0",
     "faiss-cpu>=1.11.0.post1",
     "langchain>=0.3.27",
     "langchain-community>=0.3.27",
+    "langchain-openai>=0.3.0",
     "langchain-google-genai>=2.1.8",
+    "pdfplumber>=0.11.4",
+    "pandas>=2.2.0",
+    "openpyxl>=3.1.2",
     "pypdf>=5.9.0",
     "sentence-transformers>=2.7.0",
+    "langchain-google-vertexai>=3.2.2",
+    "langchain-huggingface>=1.2.0",
 ]
+
+[project.scripts]
+chatbot = "main:main"
+create-vector-store = "index_store:main"
+fetch-elasticsearch-results = "elastic.fetch_elasticsearch_results:main"
+
+[tool.uv]
+package = true
+
 [tool.setuptools]
-py-modules = []
+py-modules = ["chatbot_interface", "config", "index_store", "main"]
+
+[tool.setuptools.packages.find]
+exclude = [".venv*", "FinQA*", "notebooks*", "faiss_index*", "chatbot_rag.egg-info*"]

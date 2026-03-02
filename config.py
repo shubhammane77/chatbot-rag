@@ -8,18 +8,20 @@ def load_environment_variables():
     os.environ["LANGSMITH_API_KEY"] = os.getenv("LANGSMITH_API_KEY", "")
     os.environ["LANGSMITH_PROJECT"] = os.getenv("LANGSMITH_PROJECT", "49036947708")
     os.environ["LANGSMITH_ENDPOINT"] = os.getenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
-    # Set Google API key
-    os.environ["GOOGLE_API_KEY"] = os.getenv("GEMINI_API_KEY", "")
+    # LLM provider priority: HF → OpenRouter → Vertex AI
+    os.environ["HUGGINGFACEHUB_API_TOKEN"] = os.getenv("HF_API_KEY") or os.getenv("HUGGINGFACEHUB_API_TOKEN", "")
+    os.environ["HF_MODEL"] = os.getenv("HF_MODEL", "Qwen/Qwen2.5-72B-Instruct")
+    os.environ["OPENROUTER_API_KEY"] = os.getenv("OPENROUTER_API_KEY", "")
+    os.environ["OPENROUTER_MODEL"] = os.getenv("OPENROUTER_MODEL", "google/gemma-3-27b-it:free")
+    # Gemini / Vertex AI fallback
+    os.environ["GEMINI_MODEL"] = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    os.environ["GOOGLE_CLOUD_PROJECT"] = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GENAI_PROJECT", "")
+    os.environ["GOOGLE_CLOUD_LOCATION"] = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+    # AQ. OAuth token: expose as GOOGLE_OAUTH_ACCESS_TOKEN so google-auth picks it up
+    gemini_key = os.getenv("GEMINI_API_KEY", "")
+    if gemini_key.startswith("AQ."):
+        os.environ["GOOGLE_OAUTH_ACCESS_TOKEN"] = gemini_key
     os.environ["DOCUMENT_PATH"] = os.getenv("DOCUMENT_PATH", "")
     os.environ["HF_EMBEDDING_MODEL"] = os.getenv("HF_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
     os.environ["DEBUG_MODE"] = os.getenv("DEBUG_MODE", "false")
 
-    # Print environment variables for verification (optional)
-    print(f"LANGSMITH_API_KEY: {os.environ.get('LANGSMITH_API_KEY')}")
-    print(f"LANGSMITH_TRACING: {os.environ.get('LANGSMITH_TRACING')}")
-    print(f"LANGSMITH_PROJECT: {os.environ.get('LANGSMITH_PROJECT')}")
-    print(f"LANGSMITH_ENDPOINT: {os.environ.get('LANGSMITH_ENDPOINT')}")
-    print(f"GOOGLE_API_KEY: {os.environ.get('GOOGLE_API_KEY')}")
-    print(f"DOCUMENT_PATH: {os.environ.get('DOCUMENT_PATH')}")
-    print(f"HF_EMBEDDING_MODEL: {os.environ.get('HF_EMBEDDING_MODEL')}")
-    print(f"DEBUG_MODE: {os.environ.get('DEBUG_MODE')}")

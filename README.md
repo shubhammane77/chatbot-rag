@@ -41,7 +41,17 @@ uv run create-vector-store
 
 This command will process the PDF document configured in your `.env` file and create `faiss_index_recursive`, `faiss_index_fixed_size`, and `faiss_index_sliding_window` directories in your project root.
 
-### 5. Run the Chatbot
+### 5. Inspect Elasticsearch Results (Optional)
+
+After running the vector-store creation command, the same documents are also indexed into Elasticsearch. You can quickly inspect lexical matches with:
+
+```bash
+uv run fetch-elasticsearch-results --query "revenue growth" --size 3
+```
+
+Override the index with `--index`, and adjust result count with `--size` as needed.
+
+### 6. Run the Chatbot
 
 Once the vector stores are created, you can start the chatbot application:
 
@@ -56,7 +66,8 @@ After running the command, the chatbot will prompt you to select a chunking stra
 - `main.py`: Main entry point for the chatbot application.
 - `create_vector_store_script.py`: Script to create and update FAISS vector stores.
 - `vector_store.py`: Contains functions for creating and loading FAISS vector stores.
-- `rag_pipeline.py`: Defines the RAG chain construction.
+- `fetch_elasticsearch_results.py`: Utility script to query Elasticsearch directly.
+- `retriever.py`: Defines the RAG chain construction.
 - `chunking_strategies/`: Contains different document chunking implementations (e.g., `recursive_character.py`, `fixed_size.py`, `sliding_window.py`).
 - `retrieval_strategies/`: Contains different query rewriting and decomposition strategies (e.g., `multi_query.py`, `chain_of_thought.py`, `step_back.py`).
 - `pyproject.toml`: Project configuration and `uv run` scripts definitions.

@@ -1,7 +1,7 @@
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.schema import HumanMessage
+from langchain_core.messages import HumanMessage
 import re
-def decompose_query_with_cot(user_query, model_name="gemini-2.5-flash"):
+from utils.llm_factory import build_llm
+def decompose_query_with_cot(user_query, model_name=None):
     """
     Decompose a complex user query into logical sub-steps using Chain of Thought prompting
     via Google's Gemini model (using the Generative AI SDK).
@@ -22,8 +22,8 @@ User query: "{user_query}"
 Think step by step and return only the list.
 """
 
-    llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0)
-    response = llm([HumanMessage(content=cot_prompt)])
+    llm = build_llm(model_name=model_name, temperature=0)
+    response = llm.invoke([HumanMessage(content=cot_prompt)])
     # Extract text response
     steps_text = response.content
     # print(f"Response from LLM: {steps_text}")

@@ -1,7 +1,7 @@
 from typing import List
 
 from langchain_core.documents import Document
-from langchain.text_splitter import CharacterTextSplitter
+from langchain_text_splitters import CharacterTextSplitter
 
 from chunking_strategies.base import ChunkingStrategy
 
