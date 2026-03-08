@@ -19,6 +19,7 @@ from logs.logging_utils import (
     log_debug,
     set_last_retrieval_summary,
 )
+from logs.rag_logger import rag_log
 from utils.rate_limiters import get_shared_llm_rate_limiter
 
 from elastic.elasticsearch_utils import (
@@ -78,16 +79,16 @@ class HybridRetriever(BaseRetriever):
         return self._deduplicate_documents(combined)
 
     def _get_semantic_documents(self, query: str) -> List[Document]:
-        if self.semantic_retriever is None:
+        if self.semantic_retriever is None or self.semantic_k <= 0:
             return []
         documents = self.semantic_retriever.invoke(query)
         for document in documents:
             if document.metadata is None:
                 document.metadata = {}
             document.metadata["retrieval_mode"] = "semantic"
-        if self.semantic_k > 0:
-            return documents[: self.semantic_k]
-        return documents
+        docs = documents[: self.semantic_k]
+        rag_log.retrieval(query=query, mode="semantic", documents=docs)
+        return docs
 
     def _get_lexical_documents(self, query: str) -> List[Document]:
         if self._es_client is None or self.lexical_k <= 0:
@@ -128,6 +129,7 @@ class HybridRetriever(BaseRetriever):
         summary = "\n".join(summary_lines)
         log_debug(summary, force=True)
         set_last_retrieval_summary(summary)
+        rag_log.retrieval(query=query, mode="lexical", documents=lexical_docs)
 
         return lexical_docs
 
@@ -161,7 +163,7 @@ _RAG_PROMPT = ChatPromptTemplate.from_template(
 )
 
 
-def build_rag_chain(retriever: BaseRetriever):
+def build_rag_chain(retriever: BaseRetriever, *, mode: str = "hybrid"):
     rate_limiter = get_shared_llm_rate_limiter()
     debug_mode = is_debug_enabled()
     llm = build_llm(
@@ -170,7 +172,7 @@ def build_rag_chain(retriever: BaseRetriever):
         callbacks=[PromptLoggingHandler(enabled=debug_mode)],
         verbose=debug_mode,
     )
-    hybrid_retriever = create_hybrid_retriever(retriever, debug_override=debug_mode)
+    hybrid_retriever = create_hybrid_retriever(retriever, mode=mode, debug_override=debug_mode)
 
     def retrieve(inputs):
         docs = hybrid_retriever.invoke(inputs["query"])
@@ -202,10 +204,18 @@ def build_rag_chain(retriever: BaseRetriever):
 def create_hybrid_retriever(
     semantic_retriever: BaseRetriever,
     *,
+    mode: str = "hybrid",
     semantic_k: int = DEFAULT_SEMANTIC_K,
     lexical_k: int = DEFAULT_LEXICAL_K,
     debug_override: Optional[bool] = None,
 ) -> BaseRetriever:
+    if mode == "faiss_only":
+        semantic_k = DEFAULT_SEMANTIC_K
+        lexical_k = 0
+    elif mode == "es_only":
+        semantic_k = 0
+        lexical_k = DEFAULT_LEXICAL_K
+    # "hybrid" uses caller-supplied or default values
     return _create_hybrid_retriever_internal(
         semantic_retriever=semantic_retriever,
         semantic_k=semantic_k,

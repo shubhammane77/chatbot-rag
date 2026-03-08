@@ -19,12 +19,14 @@ dependencies = [
     "sentence-transformers>=2.7.0",
     "langchain-google-vertexai>=3.2.2",
     "langchain-huggingface>=1.2.0",
+    "langchain-groq>=1.1.2",
 ]
 
 [project.scripts]
 chatbot = "main:main"
 create-vector-store = "index_store:main"
 fetch-elasticsearch-results = "elastic.fetch_elasticsearch_results:main"
+load-finqa-to-es = "elastic.load_finqa_to_elasticsearch:main"
 
 [tool.uv]
 package = true
@@ -34,3 +36,8 @@ py-modules = ["chatbot_interface", "config", "index_store", "main"]
 
 [tool.setuptools.packages.find]
 exclude = [".venv*", "FinQA*", "notebooks*", "faiss_index*", "chatbot_rag.egg-info*"]
+
+[dependency-groups]
+dev = [
+    "matplotlib>=3.10.8",
+]

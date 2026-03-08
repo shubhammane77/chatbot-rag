@@ -20,7 +20,6 @@ from elastic.elasticsearch_utils import (
 from vectore_store.vector_store import create_vector_store
 
 
-
 def main():
     load_environment_variables()
     print("Creating vector stores...")
@@ -38,7 +37,8 @@ def main():
         print(error)
         exit(1)
 
-    documents, total_tables = load_documents_with_tables(pdf_files)
+    use_pdfplumber = os.getenv("USE_PDFPLUMBER", "true").lower() not in ("false", "0", "no")
+    documents, total_tables = load_documents_with_tables(pdf_files, use_pdfplumber=use_pdfplumber)
 
     print(
         f"Total loaded {len(documents)} documents "
@@ -64,13 +64,15 @@ def main():
         "sliding_window": SlidingWindowChunkingStrategy(),
     }
 
+    table_suffix = "" if use_pdfplumber else "_no_tables"
+
     # Create or load vector stores for each strategy
     vector_stores = {}
     for name, strategy in chunking_strategies.items():
-        index_name = f"faiss_index_{name}"
-        print(f"Creating vector store for {name} strategy...")
-        # Here, we pass the raw 'documents' to the chunking strategy, which will split them
+        index_name = f"faiss_index_{name}{table_suffix}"
+        print(f"Creating vector store for {name} strategy (index: {index_name})...")
         vector_stores[name] = create_vector_store(documents, strategy, index_name=index_name)
+
 
 def resolve_pdf_files(path: str) -> List[str]:
     if os.path.isdir(path):
@@ -88,19 +90,24 @@ def resolve_pdf_files(path: str) -> List[str]:
     raise ValueError(f"Error: DOCUMENT_PATH '{path}' is not a valid PDF file or directory.")
 
 
-def load_documents_with_tables(pdf_files: List[str]) -> Tuple[List[Document], int]:
+def load_documents_with_tables(
+    pdf_files: List[str], *, use_pdfplumber: bool = True
+) -> Tuple[List[Document], int]:
     combined_documents: List[Document] = []
     total_tables = 0
     for filepath in pdf_files:
         print(f"\nProcessing {filepath} ...")
         text_docs = load_pdf_text_documents(filepath)
-        table_docs = extract_table_documents(filepath)
         combined_documents.extend(text_docs)
-        combined_documents.extend(table_docs)
-        total_tables += len(table_docs)
-        print(
-            f"  - Added {len(text_docs)} text segments and {len(table_docs)} table segments."
-        )
+        if use_pdfplumber:
+            table_docs = extract_table_documents(filepath)
+            combined_documents.extend(table_docs)
+            total_tables += len(table_docs)
+            print(
+                f"  - Added {len(text_docs)} text segments and {len(table_docs)} table segments."
+            )
+        else:
+            print(f"  - Added {len(text_docs)} text segments (table extraction disabled).")
     return combined_documents, total_tables
 
 
@@ -144,14 +151,7 @@ def extract_table_documents(filepath: str) -> List[Document]:
     return table_docs
 
 
-def safe_int(value):
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def rows_to_csv(rows):
+def rows_to_csv(rows: List) -> str:
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     for row in rows:

@@ -13,7 +13,7 @@ except ImportError as import_error:  # pragma: no cover - optional dependency
     helpers = None  # type: ignore[assignment]
     ELASTICSEARCH_IMPORT_ERROR = import_error
 
-DEFAULT_INDEX_NAME = "documents"
+DEFAULT_INDEX_NAME = "testing"
 
 
 def _require_elasticsearch():

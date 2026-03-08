@@ -1,7 +1,9 @@
+import csv
+import itertools
 import json
 import os
 from dataclasses import dataclass
-from typing import Optional, Sequence
+from typing import Dict, List, Optional, Sequence
 
 from langchain_core.documents import Document
 
@@ -9,6 +11,7 @@ from evaluator.judges import AnswerJudge
 from evaluator.wrong_answer_recorder import WrongAnswerRecorder
 from logs.logging_utils import is_debug_enabled, log_debug
 from retrieval_strategies.retriever import build_rag_chain
+from utils.cost_tracker import cost_tracker
 from retrieval_strategies.chain_of_thought import decompose_query_with_cot
 from retrieval_strategies.multi_query import generate_multi_queries
 from retrieval_strategies.step_back import query_with_step_back
@@ -46,9 +49,11 @@ def chat_interface(vector_stores):
     retriever = selected_vector_store.as_retriever(search_kwargs={"k": 4})
     rag_chain = build_rag_chain(retriever)
 
+    cost_tracker.reset()
     while True:
         query = input("\nAsk a question (or type 'exit'): ")
         if query.lower() == "exit":
+            cost_tracker.print_summary("Chat Session — LLM Cost Summary")
             break
         query_rewriting = input("\n Type m for multi-query generation, c for chain of thought prompting, s for step-by-step decomposition, or press Enter to run RAG directly: ")
         if query_rewriting.lower() == "m":
@@ -82,12 +87,187 @@ def chat_interface(vector_stores):
             print("\nAnswer:\n", response_dict["result"])
             _maybe_print_sources(response_dict)
 
-def evaluate_strategies(vector_stores):
-    evaluation_data = []
-    with open("FinQA/dev/metadata.jsonl", "r") as f:
+def _run_query_with_strategy(rag_chain, query: str, strategy: str) -> str:
+    """Run a query through the rag_chain using the given query strategy.
+
+    Returns the concatenated answer string(s).
+    """
+    if strategy == "none":
+        response_dict = rag_chain.invoke({"query": query})
+        return response_dict["result"]
+
+    if strategy == "multi_query":
+        sub_queries = generate_multi_queries(query)
+        if not sub_queries:
+            response_dict = rag_chain.invoke({"query": query})
+            return response_dict["result"]
+        answers = []
+        for sq in sub_queries:
+            r = rag_chain.invoke({"query": sq})
+            answers.append(r["result"])
+        return "\n\n".join(answers)
+
+    if strategy == "chain_of_thought":
+        steps = decompose_query_with_cot(query)
+        if not steps:
+            response_dict = rag_chain.invoke({"query": query})
+            return response_dict["result"]
+        answers = []
+        for step in steps:
+            r = rag_chain.invoke({"query": step})
+            answers.append(r["result"])
+        return "\n\n".join(answers)
+
+    if strategy == "step_back":
+        steps = query_with_step_back(query)
+        if not steps:
+            response_dict = rag_chain.invoke({"query": query})
+            return response_dict["result"]
+        answers = []
+        for step in steps:
+            r = rag_chain.invoke({"query": step})
+            answers.append(r["result"])
+        return "\n\n".join(answers)
+
+    # Fallback: treat as "none"
+    response_dict = rag_chain.invoke({"query": query})
+    return response_dict["result"]
+
+
+def evaluate_strategies(
+    all_vector_stores: Dict,
+    eval_config: Optional[Dict] = None,
+):
+    """Run evaluation across all active dimension combinations.
+
+    Parameters
+    ----------
+    all_vector_stores:
+        Dict keyed by ``"{chunking_strategy}_{table_suffix}"`` where
+        table_suffix is ``"with_tables"`` or ``"without_tables"``.
+    eval_config:
+        Output of ``config.load_eval_config()``.  When *None* the legacy
+        single-key format ``{name: vector_store}`` is accepted for
+        backwards-compatibility.
+    """
+    # --- backwards-compat: old callers pass plain {name: vs} dict ---
+    if eval_config is None:
+        _legacy_evaluate(all_vector_stores)
+        return
+
+    evaluation_data: List[dict] = []
+    with open("FinQA/test/metadata.jsonl", "r") as f:
         for line in f:
             evaluation_data.append(json.loads(line))
-    
+
+    sample_count = eval_config.get("sample_count", 100)
+    evaluation_data = evaluation_data[:sample_count]
+    print(f"Loaded {len(evaluation_data)} evaluation samples (limit={sample_count}).")
+
+    numeric_abs_tol = float(os.getenv("NUMERIC_ABSOLUTE_TOLERANCE", "1e-6"))
+    numeric_rel_tol = float(os.getenv("NUMERIC_RELATIVE_TOLERANCE", "0.01"))
+    judge = AnswerJudge()
+    recorder = WrongAnswerRecorder()
+
+    chunking_list = eval_config.get("chunking_strategies", [])
+    retrieval_list = eval_config.get("retrieval_modes", [])
+    query_list = eval_config.get("query_strategies", [])
+    table_list = eval_config.get("table_extraction", [])
+
+    results: List[dict] = []
+
+    combos = list(itertools.product(chunking_list, retrieval_list, query_list, table_list))
+    total_combos = len(combos)
+    print(f"\nRunning {total_combos} combination(s)...\n")
+
+    for combo_idx, (chunking, retrieval_mode, q_strategy, table_variant) in enumerate(combos, 1):
+        vs_key = f"{chunking}_{table_variant}"
+        vector_store = all_vector_stores.get(vs_key)
+        if vector_store is None:
+            print(
+                f"[{combo_idx}/{total_combos}] SKIP — vector store not loaded for key '{vs_key}'"
+            )
+            continue
+
+        combo_label = f"{chunking} | {retrieval_mode} | {q_strategy} | {table_variant}"
+        print(f"\n[{combo_idx}/{total_combos}] Evaluating: {combo_label}")
+
+        retriever = vector_store.as_retriever(search_kwargs={"k": 2})
+        rag_chain = build_rag_chain(retriever, mode=retrieval_mode)
+
+        tokens_before = cost_tracker.snapshot()
+        correct = 0
+        total = 0
+
+        for i, sample in enumerate(evaluation_data):
+            query = sample["question"]
+            expected_answer = sample["original_answer"]
+            file_name = sample.get("file_name", "N/A")
+
+            print(f"  [{i+1}/{len(evaluation_data)}] Query: {query}")
+            try:
+                actual_response = _run_query_with_strategy(rag_chain, query, q_strategy)
+            except Exception as exc:
+                print(f"  ERROR running query: {exc}")
+                actual_response = ""
+
+            comparison = compare_answers(
+                query,
+                expected_answer,
+                actual_response,
+                numeric_abs_tol=numeric_abs_tol,
+                numeric_rel_tol=numeric_rel_tol,
+                judge=judge,
+            )
+            if comparison.is_correct:
+                correct += 1
+            else:
+                recorder.record(
+                    strategy=f"{chunking}_{retrieval_mode}_{q_strategy}_{table_variant}",
+                    question=query,
+                    expected=expected_answer,
+                    actual=actual_response,
+                    rationale=comparison.rationale,
+                    lexical_context="",
+                    semantic_context="",
+                    judge_prompt=comparison.judge_prompt,
+                    expected_file_name=file_name,
+                )
+            total += 1
+            running_acc = (correct / total) * 100
+            print(f"  Running accuracy: {running_acc:.2f}% ({correct}/{total})")
+
+        accuracy = (correct / total * 100) if total > 0 else 0.0
+        tokens_after = cost_tracker.snapshot()
+        results.append(
+            {
+                "chunking": chunking,
+                "retrieval": retrieval_mode,
+                "query_strategy": q_strategy,
+                "tables": table_variant,
+                "accuracy": f"{accuracy:.2f}%",
+                "correct": correct,
+                "total": total,
+                "llm_calls": tokens_after["calls"] - tokens_before["calls"],
+                "input_tokens": tokens_after["input_tokens"] - tokens_before["input_tokens"],
+                "output_tokens": tokens_after["output_tokens"] - tokens_before["output_tokens"],
+                "total_tokens": tokens_after["total_tokens"] - tokens_before["total_tokens"],
+            }
+        )
+
+    recorder.save()
+    _print_results_table(results)
+    _save_results_csv(results)
+    cost_tracker.print_summary("Evaluation — LLM Cost Summary")
+
+
+def _legacy_evaluate(vector_stores: Dict):
+    """Original evaluate_strategies behaviour for backwards-compat."""
+    evaluation_data = []
+    with open("FinQA/test/metadata.jsonl", "r") as f:
+        for line in f:
+            evaluation_data.append(json.loads(line))
+
     print(f"Loaded {len(evaluation_data)} evaluation samples.")
 
     numeric_abs_tol = float(os.getenv("NUMERIC_ABSOLUTE_TOLERANCE", "1e-6"))
@@ -101,15 +281,14 @@ def evaluate_strategies(vector_stores):
         rag_chain = build_rag_chain(retriever)
         total_queries = 0
         correct_answers = 0
-        
-        # Limit to a smaller subset for initial testing to avoid excessive API calls
+
         for i, sample in enumerate(evaluation_data):
-            if i >= 100:  # Evaluate only the first 10 samples for now
+            if i >= 100:
                 break
             query = sample["question"]
             expected_answer = sample["original_answer"]
-            file_name = sample.get("file_name", "N/A") # Safely get file_name, default to N/A if not present
-            
+            file_name = sample.get("file_name", "N/A")
+
             print(f"Query: {query}")
             print(f"File Name: {file_name}")
             response_dict = rag_chain.invoke({"query": query})
@@ -147,14 +326,55 @@ def evaluate_strategies(vector_stores):
             total_queries += 1
             running_accuracy = (correct_answers / total_queries) * 100
             print(f"Running accuracy after {total_queries} samples: {running_accuracy:.2f}%")
-        
-        if total_queries > 0: 
+
+        if total_queries > 0:
             accuracy = (correct_answers / total_queries) * 100
             print(f"Accuracy for {name} strategy: {accuracy:.2f}%")
         else:
             print(f"No queries evaluated for {name} strategy.")
 
     recorder.save()
+
+
+def _print_results_table(results: List[dict]) -> None:
+    if not results:
+        print("\nNo results to display.")
+        return
+
+    headers = ["Chunking", "Retrieval", "Query Strategy", "Tables", "Correct", "Total", "Accuracy", "LLM Calls", "Input Tok", "Output Tok", "Total Tok"]
+    col_keys = ["chunking", "retrieval", "query_strategy", "tables", "correct", "total", "accuracy", "llm_calls", "input_tokens", "output_tokens", "total_tokens"]
+
+    # Compute column widths
+    widths = [len(h) for h in headers]
+    for row in results:
+        for i, key in enumerate(col_keys):
+            widths[i] = max(widths[i], len(str(row[key])))
+
+    def fmt_row(values):
+        return "| " + " | ".join(str(v).ljust(widths[i]) for i, v in enumerate(values)) + " |"
+
+    separator = "|-" + "-|-".join("-" * w for w in widths) + "-|"
+
+    print("\n" + fmt_row(headers))
+    print(separator)
+    for row in results:
+        print(fmt_row([row[k] for k in col_keys]))
+    print()
+
+
+def _save_results_csv(results: List[dict]) -> None:
+    if not results:
+        return
+    os.makedirs("logs", exist_ok=True)
+    csv_path = os.path.join("logs", "eval_results.csv")
+    fieldnames = ["chunking", "retrieval", "query_strategy", "tables", "correct", "total", "accuracy", "llm_calls", "input_tokens", "output_tokens", "total_tokens"]
+    file_exists = os.path.isfile(csv_path)
+    with open(csv_path, "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        if not file_exists:
+            writer.writeheader()
+        writer.writerows(results)
+    print(f"Results appended to {csv_path}")
 
 
 @dataclass

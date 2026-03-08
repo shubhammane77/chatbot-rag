@@ -8,30 +8,23 @@ def query_with_step_back(user_query, model_name=None):
     """
 
     cot_prompt = f"""
-You are analyzing a complex research paper using a RAG model. Your goal is to generate "stepback questions" — high-level, reflective questions that encourage deeper understanding, challenge assumptions, or explore the broader context of the research.
+You are analyzing financial reports and portfolio data using a RAG model. Your task is to generate "step-back questions" that encourage deeper quantitative analysis of portfolio strategy.
 
-Given a specific question about the research paper, produce several stepback questions that:
-- Re-express the problem in broader or more general terms.
-- Question the assumptions underlying the research.
-- Connect the topic to foundational theories or related fields.
-- Consider the implications or consequences of the findings.
-- Explore alternative perspectives or formulations.
+Given a specific financial question, produce step-back questions that:
+- Reframe the problem in broader portfolio or macro terms.
+- Question assumptions behind the calculations or models.
+- Explore risk factors, sensitivities, or alternative scenarios.
+- Consider portfolio-level impacts (returns, volatility, drawdowns, diversification).
 
-Example Input Question: "What are the key findings of this paper on transformer-based models for protein folding?"
+Focus on questions that could lead to quantitative analysis.
 
-Example Stepback Questions:
-- What assumptions does this paper make about the relationship between language modeling and protein structure?
-- How do transformer-based models compare with traditional approaches in terms of interpretability?
-- What limitations in the training data might affect generalization to novel proteins?
-- What does success in this domain suggest about the generality of transformer architectures?
+Generate 2 step-back questions.
 
-Now, for the following input question, generate 3 stepback questions:
-Please follow this response format:
+Format:
 [Question 1: ...]
 [Question 2: ...]
-[Question 3: ...]
-[Insert Input Question Here]
-User query: "{user_query}"
+
+User query:"{user_query}"
 """
 
     llm = build_llm(model_name=model_name, temperature=0)
