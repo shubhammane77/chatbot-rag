@@ -2,7 +2,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import SentenceTransformerEmbeddings
 from dotenv import load_dotenv
 
-from chunking_strategies.base import ChunkingStrategy
+from ingestion.chunking_strategies.base import ChunkingStrategy
 import os
 
 load_dotenv()

@@ -61,6 +61,39 @@ uv run chatbot
 
 After running the command, the chatbot will prompt you to select a chunking strategy and then you can start asking questions. You will also have options for multi-query generation, chain-of-thought prompting, and step-back decomposition.
 
+### 7. Run Retrieval Precision Evaluation (no LLM required)
+
+Evaluates retrieval precision across all chunking × retrieval mode combinations without calling the LLM. For each query it checks what fraction of retrieved documents come from the correct source file.
+
+```bash
+uv run eval-retrieval-precision
+```
+
+Control which combinations to test via env vars:
+
+```bash
+EVAL_CHUNKING_STRATEGIES=recursive,fixed_size,sliding_window \
+EVAL_RETRIEVAL_MODES=faiss_only,es_only,hybrid,rrf,cross_encoder \
+EVAL_TABLE_EXTRACTION=with_tables \
+EVAL_SAMPLE_COUNT=1000 \
+uv run eval-retrieval-precision
+```
+
+Results are printed as a table and appended to `logs/retrieval_precision.csv`.
+
+**Retrieval modes:**
+| Mode | Description |
+|---|---|
+| `faiss_only` | FAISS semantic (bi-encoder) search only |
+| `es_only` | Elasticsearch BM25 lexical search only |
+| `hybrid` | Simple union of both sources (deduped) |
+| `rrf` | Reciprocal Rank Fusion — docs in both sources ranked higher |
+| `cross_encoder` | Hybrid union re-ranked by a cross-encoder, filtered to top-k |
+
+**Precision metrics reported:**
+- **Avg Query Precision** — average of `relevant_docs / total_docs` per query
+- **Overall Precision** — `total_relevant / total_retrieved` across all queries
+
 ## Project Structure (Overview)
 
 - `main.py`: Main entry point for the chatbot application.

@@ -16,3 +16,4 @@ logs/
 .DS_Store
 debug.log
 docker-compose.yml
+faiss_indices/*

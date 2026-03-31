@@ -25,17 +25,18 @@ dependencies = [
 [project.scripts]
 chatbot = "main:main"
 create-vector-store = "index_store:main"
-fetch-elasticsearch-results = "elastic.fetch_elasticsearch_results:main"
-load-finqa-to-es = "elastic.load_finqa_to_elasticsearch:main"
+fetch-elasticsearch-results = "ingestion.elastic.fetch_elasticsearch_results:main"
+load-finqa-to-es = "ingestion.elastic.load_finqa_to_elasticsearch:main"
+eval-retrieval-precision = "eval_retrieval_precision:main"
 
 [tool.uv]
 package = true
 
 [tool.setuptools]
-py-modules = ["chatbot_interface", "config", "index_store", "main"]
+py-modules = ["chatbot_interface", "config", "eval_retrieval_precision", "index_store", "main"]
 
 [tool.setuptools.packages.find]
-exclude = [".venv*", "FinQA*", "notebooks*", "faiss_index*", "chatbot_rag.egg-info*"]
+exclude = [".venv*", "FinQA*", "notebooks*", "faiss_indices*", "chatbot_rag.egg-info*"]
 
 [dependency-groups]
 dev = [

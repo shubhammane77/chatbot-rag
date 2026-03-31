@@ -87,51 +87,79 @@ def chat_interface(vector_stores):
             print("\nAnswer:\n", response_dict["result"])
             _maybe_print_sources(response_dict)
 
-def _run_query_with_strategy(rag_chain, query: str, strategy: str) -> str:
+def _run_query_with_strategy(
+    rag_chain, query: str, strategy: str
+) -> tuple[str, List[Document]]:
     """Run a query through the rag_chain using the given query strategy.
 
-    Returns the concatenated answer string(s).
+    Returns a tuple of (concatenated answer string, all retrieved source documents).
     """
     if strategy == "none":
         response_dict = rag_chain.invoke({"query": query})
-        return response_dict["result"]
+        return response_dict["result"], response_dict.get("source_documents") or []
 
     if strategy == "multi_query":
         sub_queries = generate_multi_queries(query)
         if not sub_queries:
             response_dict = rag_chain.invoke({"query": query})
-            return response_dict["result"]
-        answers = []
+            return response_dict["result"], response_dict.get("source_documents") or []
+        answers, all_docs = [], []
         for sq in sub_queries:
             r = rag_chain.invoke({"query": sq})
             answers.append(r["result"])
-        return "\n\n".join(answers)
+            all_docs.extend(r.get("source_documents") or [])
+        return "\n\n".join(answers), all_docs
 
     if strategy == "chain_of_thought":
         steps = decompose_query_with_cot(query)
         if not steps:
             response_dict = rag_chain.invoke({"query": query})
-            return response_dict["result"]
-        answers = []
+            return response_dict["result"], response_dict.get("source_documents") or []
+        answers, all_docs = [], []
         for step in steps:
             r = rag_chain.invoke({"query": step})
             answers.append(r["result"])
-        return "\n\n".join(answers)
+            all_docs.extend(r.get("source_documents") or [])
+        return "\n\n".join(answers), all_docs
 
     if strategy == "step_back":
         steps = query_with_step_back(query)
         if not steps:
             response_dict = rag_chain.invoke({"query": query})
-            return response_dict["result"]
-        answers = []
+            return response_dict["result"], response_dict.get("source_documents") or []
+        answers, all_docs = [], []
         for step in steps:
             r = rag_chain.invoke({"query": step})
             answers.append(r["result"])
-        return "\n\n".join(answers)
+            all_docs.extend(r.get("source_documents") or [])
+        return "\n\n".join(answers), all_docs
 
     # Fallback: treat as "none"
     response_dict = rag_chain.invoke({"query": query})
-    return response_dict["result"]
+    return response_dict["result"], response_dict.get("source_documents") or []
+
+
+def compute_retrieval_precision(
+    docs: List[Document], expected_file_name: str
+) -> Optional[float]:
+    """Return the fraction of retrieved docs sourced from the expected file.
+
+    ``expected_file_name`` is the FinQA metadata value like
+    ``"pdf/ETR/2016/page_23.pdf"``.  Each doc's ``source`` metadata is
+    typically an absolute or relative path that ends with that same suffix
+    (e.g. ``"FinQA/dev/pdf/ETR/2016/page_23.pdf"``).  We normalise both to
+    the segment after ``"pdf/"`` before comparing.
+    """
+    if not docs or not expected_file_name:
+        return None
+    # "pdf/ETR/2016/page_23.pdf"  →  "ETR/2016/page_23.pdf"
+    norm_expected = expected_file_name.split("pdf/", 1)[-1]
+    relevant = sum(
+        1
+        for doc in docs
+        if norm_expected in (doc.metadata.get("source") or "")
+    )
+    return relevant / len(docs)
 
 
 def evaluate_strategies(
@@ -198,6 +226,8 @@ def evaluate_strategies(
         tokens_before = cost_tracker.snapshot()
         correct = 0
         total = 0
+        precision_sum = 0.0
+        precision_count = 0
 
         for i, sample in enumerate(evaluation_data):
             query = sample["question"]
@@ -206,10 +236,22 @@ def evaluate_strategies(
 
             print(f"  [{i+1}/{len(evaluation_data)}] Query: {query}")
             try:
-                actual_response = _run_query_with_strategy(rag_chain, query, q_strategy)
+                actual_response, retrieved_docs = _run_query_with_strategy(
+                    rag_chain, query, q_strategy
+                )
             except Exception as exc:
                 print(f"  ERROR running query: {exc}")
                 actual_response = ""
+                retrieved_docs = []
+
+            precision = compute_retrieval_precision(retrieved_docs, file_name)
+            if precision is not None:
+                precision_sum += precision
+                precision_count += 1
+                print(
+                    f"  Retrieval precision: {precision:.0%} "
+                    f"({int(precision * len(retrieved_docs))}/{len(retrieved_docs)} docs from correct source)"
+                )
 
             comparison = compare_answers(
                 query,
@@ -238,6 +280,7 @@ def evaluate_strategies(
             print(f"  Running accuracy: {running_acc:.2f}% ({correct}/{total})")
 
         accuracy = (correct / total * 100) if total > 0 else 0.0
+        avg_precision = (precision_sum / precision_count * 100) if precision_count > 0 else 0.0
         tokens_after = cost_tracker.snapshot()
         results.append(
             {
@@ -246,6 +289,7 @@ def evaluate_strategies(
                 "query_strategy": q_strategy,
                 "tables": table_variant,
                 "accuracy": f"{accuracy:.2f}%",
+                "retrieval_precision": f"{avg_precision:.2f}%",
                 "correct": correct,
                 "total": total,
                 "llm_calls": tokens_after["calls"] - tokens_before["calls"],
@@ -341,8 +385,8 @@ def _print_results_table(results: List[dict]) -> None:
         print("\nNo results to display.")
         return
 
-    headers = ["Chunking", "Retrieval", "Query Strategy", "Tables", "Correct", "Total", "Accuracy", "LLM Calls", "Input Tok", "Output Tok", "Total Tok"]
-    col_keys = ["chunking", "retrieval", "query_strategy", "tables", "correct", "total", "accuracy", "llm_calls", "input_tokens", "output_tokens", "total_tokens"]
+    headers = ["Chunking", "Retrieval", "Query Strategy", "Tables", "Correct", "Total", "Accuracy", "Ret. Precision", "LLM Calls", "Input Tok", "Output Tok", "Total Tok"]
+    col_keys = ["chunking", "retrieval", "query_strategy", "tables", "correct", "total", "accuracy", "retrieval_precision", "llm_calls", "input_tokens", "output_tokens", "total_tokens"]
 
     # Compute column widths
     widths = [len(h) for h in headers]
@@ -367,7 +411,7 @@ def _save_results_csv(results: List[dict]) -> None:
         return
     os.makedirs("logs", exist_ok=True)
     csv_path = os.path.join("logs", "eval_results.csv")
-    fieldnames = ["chunking", "retrieval", "query_strategy", "tables", "correct", "total", "accuracy", "llm_calls", "input_tokens", "output_tokens", "total_tokens"]
+    fieldnames = ["chunking", "retrieval", "query_strategy", "tables", "correct", "total", "accuracy", "retrieval_precision", "llm_calls", "input_tokens", "output_tokens", "total_tokens"]
     file_exists = os.path.isfile(csv_path)
     with open(csv_path, "a", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)

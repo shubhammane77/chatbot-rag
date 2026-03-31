@@ -1,5 +1,5 @@
 import os
-from vectore_store.vector_store import load_vector_store
+from ingestion.vector_store.vector_store import load_vector_store
 from chatbot_interface import chat_interface, evaluate_strategies
 from config import load_environment_variables, load_eval_config
 
@@ -17,9 +17,9 @@ def main():
     for chunking in eval_config["chunking_strategies"]:
         for table_variant in eval_config["table_extraction"]:
             if table_variant == "with_tables":
-                index_name = f"faiss_index_{chunking}"
+                index_name = f"faiss_indices/{chunking}"
             else:
-                index_name = f"faiss_index_{chunking}_no_tables"
+                index_name = f"faiss_indices/{chunking}_no_tables"
 
             vs_key = f"{chunking}_{table_variant}"
             if os.path.exists(index_name):

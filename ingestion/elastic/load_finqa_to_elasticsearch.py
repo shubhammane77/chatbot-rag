@@ -13,7 +13,7 @@ from typing import List
 from langchain_core.documents import Document
 
 from config import load_environment_variables
-from elastic.elasticsearch_utils import (
+from ingestion.elastic.elasticsearch_utils import (
     build_elasticsearch_client,
     persist_documents_to_elasticsearch,
 )

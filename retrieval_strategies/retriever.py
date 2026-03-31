@@ -22,13 +22,13 @@ from logs.logging_utils import (
 from logs.rag_logger import rag_log
 from utils.rate_limiters import get_shared_llm_rate_limiter
 
-from elastic.elasticsearch_utils import (
+from ingestion.elastic.elasticsearch_utils import (
     build_elasticsearch_client,
     search_elasticsearch_documents,
 )
 
 DEFAULT_SEMANTIC_K = 2
-DEFAULT_LEXICAL_K = 2
+DEFAULT_LEXICAL_K = 3
 
 
 class PromptLoggingHandler(BaseCallbackHandler):
@@ -54,12 +54,16 @@ class PromptLoggingHandler(BaseCallbackHandler):
         log_debug(message, force=True)
 
 
+RRF_K = 60  # standard constant for Reciprocal Rank Fusion
+
+
 class HybridRetriever(BaseRetriever):
     semantic_retriever: BaseRetriever
     semantic_k: int = DEFAULT_SEMANTIC_K
     lexical_k: int = DEFAULT_LEXICAL_K
     es_index: Optional[str] = None
     debug: bool = False
+    fusion_mode: str = "concat"  # "concat" or "rrf"
     _es_client: Optional[object] = PrivateAttr(default=None)
 
     def __init__(self, **data):
@@ -75,8 +79,36 @@ class HybridRetriever(BaseRetriever):
     ) -> List[Document]:
         lexical_docs = self._get_lexical_documents(query)
         semantic_docs = self._get_semantic_documents(query)
-        combined = lexical_docs  + semantic_docs
-        return self._deduplicate_documents(combined)
+        if self.fusion_mode == "rrf":
+            return self._rrf_merge(lexical_docs, semantic_docs)
+        return self._deduplicate_documents(lexical_docs + semantic_docs)
+
+    def _doc_key(self, doc: Document) -> str:
+        metadata = doc.metadata or {}
+        doc_id = metadata.get("doc_id")
+        return doc_id or f"{metadata.get('source')}:{metadata.get('page')}:{hash(doc.page_content)}"
+
+    def _rrf_merge(self, lexical_docs: List[Document], semantic_docs: List[Document]) -> List[Document]:
+        """Merge two ranked lists using Reciprocal Rank Fusion.
+
+        Docs appearing in both sources receive additive score boosts,
+        naturally surfacing cross-source agreement to the top.
+        """
+        scores: dict = {}
+        doc_map: dict = {}
+
+        for rank, doc in enumerate(lexical_docs):
+            key = self._doc_key(doc)
+            scores[key] = scores.get(key, 0.0) + 1.0 / (RRF_K + rank + 1)
+            doc_map[key] = doc
+
+        for rank, doc in enumerate(semantic_docs):
+            key = self._doc_key(doc)
+            scores[key] = scores.get(key, 0.0) + 1.0 / (RRF_K + rank + 1)
+            if key not in doc_map:
+                doc_map[key] = doc
+
+        return [doc_map[k] for k in sorted(scores, key=scores.__getitem__, reverse=True)]
 
     def _get_semantic_documents(self, query: str) -> List[Document]:
         if self.semantic_retriever is None or self.semantic_k <= 0:
@@ -135,11 +167,9 @@ class HybridRetriever(BaseRetriever):
 
     def _deduplicate_documents(self, documents: List[Document]) -> List[Document]:
         deduped: List[Document] = []
-        seen_keys = set()
+        seen_keys: set = set()
         for doc in documents:
-            metadata = doc.metadata or {}
-            doc_id = metadata.get("doc_id")
-            key = doc_id or f"{metadata.get('source')}:{metadata.get('page')}:{hash(doc.page_content)}"
+            key = self._doc_key(doc)
             if key in seen_keys:
                 continue
             seen_keys.add(key)
@@ -152,6 +182,55 @@ class HybridRetriever(BaseRetriever):
                 self._es_client.close()
             except Exception:
                 pass
+
+
+CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+CROSS_ENCODER_TOP_K = 2
+
+
+class CrossEncoderReranker(BaseRetriever):
+    """Wraps any retriever and re-scores its results with a cross-encoder.
+
+    The cross-encoder jointly encodes (query, document) pairs, producing
+    a relevance score that is far more accurate than the bi-encoder cosine
+    similarity used by FAISS.  Only the top ``top_k`` documents are returned,
+    filtering out the lowest-confidence results and reducing pool pollution.
+    """
+
+    inner: BaseRetriever
+    model_name: str = CROSS_ENCODER_MODEL
+    top_k: int = CROSS_ENCODER_TOP_K
+    _model: Optional[object] = PrivateAttr(default=None)
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        try:
+            from sentence_transformers import CrossEncoder
+            self._model = CrossEncoder(self.model_name)
+        except Exception as exc:
+            log_debug(f"[CrossEncoderReranker] Failed to load model: {exc}", force=True)
+            self._model = None
+
+    def _get_relevant_documents(
+        self,
+        query: str,
+        *,
+        run_manager: Optional[CallbackManagerForRetrieverRun] = None,
+    ) -> List[Document]:
+        docs = self.inner.invoke(query)
+        if not docs or self._model is None:
+            return docs
+
+        pairs = [(query, doc.page_content) for doc in docs]
+        scores = self._model.predict(pairs)
+
+        ranked = sorted(zip(scores, docs), key=lambda x: x[0], reverse=True)
+        for score, doc in ranked:
+            if doc.metadata is None:
+                doc.metadata = {}
+            doc.metadata["cross_encoder_score"] = float(score)
+
+        return [doc for _, doc in ranked[: self.top_k]]
 
 
 _RAG_PROMPT = ChatPromptTemplate.from_template(
@@ -209,17 +288,59 @@ def create_hybrid_retriever(
     lexical_k: int = DEFAULT_LEXICAL_K,
     debug_override: Optional[bool] = None,
 ) -> BaseRetriever:
+    """Build a retriever for the given mode.
+
+    Supported modes
+    ---------------
+    ``faiss_only``    — FAISS semantic search only
+    ``es_only``       — Elasticsearch lexical search only
+    ``hybrid``        — simple union of both sources (deduped)
+    ``rrf``           — Reciprocal Rank Fusion of both sources
+    ``cross_encoder`` — hybrid union re-ranked by a cross-encoder (top-k filtered)
+    """
     if mode == "faiss_only":
-        semantic_k = DEFAULT_SEMANTIC_K
-        lexical_k = 0
-    elif mode == "es_only":
-        semantic_k = 0
-        lexical_k = DEFAULT_LEXICAL_K
-    # "hybrid" uses caller-supplied or default values
+        return _create_hybrid_retriever_internal(
+            semantic_retriever=semantic_retriever,
+            semantic_k=DEFAULT_SEMANTIC_K,
+            lexical_k=0,
+            fusion_mode="concat",
+            debug_override=debug_override,
+        )
+
+    if mode == "es_only":
+        return _create_hybrid_retriever_internal(
+            semantic_retriever=semantic_retriever,
+            semantic_k=0,
+            lexical_k=DEFAULT_LEXICAL_K,
+            fusion_mode="concat",
+            debug_override=debug_override,
+        )
+
+    if mode == "rrf":
+        return _create_hybrid_retriever_internal(
+            semantic_retriever=semantic_retriever,
+            semantic_k=semantic_k,
+            lexical_k=lexical_k,
+            fusion_mode="rrf",
+            debug_override=debug_override,
+        )
+
+    if mode == "cross_encoder":
+        base = _create_hybrid_retriever_internal(
+            semantic_retriever=semantic_retriever,
+            semantic_k=semantic_k,
+            lexical_k=lexical_k,
+            fusion_mode="concat",
+            debug_override=debug_override,
+        )
+        return CrossEncoderReranker(inner=base)
+
+    # default: "hybrid" — simple concat union
     return _create_hybrid_retriever_internal(
         semantic_retriever=semantic_retriever,
         semantic_k=semantic_k,
         lexical_k=lexical_k,
+        fusion_mode="concat",
         debug_override=debug_override,
     )
 
@@ -229,8 +350,9 @@ def _create_hybrid_retriever_internal(
     semantic_retriever: BaseRetriever,
     semantic_k: int,
     lexical_k: int,
+    fusion_mode: str = "concat",
     debug_override: Optional[bool],
-) -> BaseRetriever:
+) -> HybridRetriever:
     debug_mode = (
         debug_override
         if debug_override is not None
@@ -250,4 +372,5 @@ def _create_hybrid_retriever_internal(
         lexical_k=lexical_k,
         es_index=os.getenv("ELASTICSEARCH_INDEX"),
         debug=debug_mode,
+        fusion_mode=fusion_mode,
     )

@@ -7,17 +7,17 @@ import pdfplumber  # type: ignore[import]
 from langchain_core.documents import Document
 from langchain_community.document_loaders import PyPDFLoader
 
-from chunking_strategies import (
+from ingestion.chunking_strategies import (
     FixedSizeChunkingStrategy,
     RecursiveCharacterChunkingStrategy,
     SlidingWindowChunkingStrategy,
 )
 from config import load_environment_variables
-from elastic.elasticsearch_utils import (
+from ingestion.elastic.elasticsearch_utils import (
     build_elasticsearch_client,
     persist_documents_to_elasticsearch,
 )
-from vectore_store.vector_store import create_vector_store
+from ingestion.vector_store.vector_store import create_vector_store
 
 
 def main():
@@ -69,7 +69,7 @@ def main():
     # Create or load vector stores for each strategy
     vector_stores = {}
     for name, strategy in chunking_strategies.items():
-        index_name = f"faiss_index_{name}{table_suffix}"
+        index_name = f"faiss_indices/{name}{table_suffix}"
         print(f"Creating vector store for {name} strategy (index: {index_name})...")
         vector_stores[name] = create_vector_store(documents, strategy, index_name=index_name)
 

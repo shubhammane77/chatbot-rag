@@ -3,14 +3,15 @@ from typing import List
 from dotenv import load_dotenv
 
 # _ALLOWED_CHUNKING = {"recursive", "fixed_size", "sliding_window"}
-# _ALLOWED_RETRIEVAL = {"faiss_only", "es_only", "hybrid"}
+# _ALLOWED_RETRIEVAL = {"faiss_only", "es_only", "hybrid", "rrf", "cross_encoder"}
 # _ALLOWED_QUERY = {"none", "multi_query", "chain_of_thought", "step_back"}
 # _ALLOWED_TABLES = {"with_tables", "without_tables"}
 
 _ALLOWED_CHUNKING = {"recursive"}
-_ALLOWED_RETRIEVAL = {"hybrid"}
-_ALLOWED_QUERY = {"none"}
+_ALLOWED_RETRIEVAL = {"hybrid","cross_encoder"}
+_ALLOWED_QUERY = {"none", }
 _ALLOWED_TABLES = {"with_tables"}
+
 
 def load_eval_config() -> dict:
     """Return active evaluation dimensions parsed from env vars."""
@@ -54,7 +55,7 @@ def load_eval_config() -> dict:
 def load_environment_variables():
     load_dotenv()
     # Set LangSmith environment variables
-    os.environ["LANGSMITH_TRACING"] = os.getenv("LANGSMITH_TRACING", "true")
+    os.environ["LANGSMITH_TRACING"] = os.getenv("LANGSMITH_TRACING", "false")
     os.environ["LANGSMITH_API_KEY"] = os.getenv("LANGSMITH_API_KEY", "")
     os.environ["LANGSMITH_PROJECT"] = os.getenv("LANGSMITH_PROJECT", "49036947708")
     os.environ["LANGSMITH_ENDPOINT"] = os.getenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")

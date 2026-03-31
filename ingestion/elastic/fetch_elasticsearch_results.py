@@ -1,7 +1,7 @@
 import argparse
 
 from config import load_environment_variables
-from elastic.elasticsearch_utils import (
+from ingestion.elastic.elasticsearch_utils import (
     build_elasticsearch_client,
     search_elasticsearch_documents,
 )
